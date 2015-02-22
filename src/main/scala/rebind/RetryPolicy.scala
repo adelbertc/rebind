@@ -11,7 +11,7 @@ import scalaz.syntax.monad._
   * (minimum time to wait before next retry) in the case where you want to retry again, or a
   * `None` if you want to give up.
   */
-final case class RetryPolicy(run: Int => Option[FiniteDuration]) extends AnyVal {
+final case class RetryPolicy(private val run: Int => Option[FiniteDuration]) {
   /** Wait for a maximum of the specified time before trying again */
   def capDelay(limit: FiniteDuration): RetryPolicy =
     RetryPolicy(n => run(n).map(_.min(limit)))
