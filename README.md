@@ -12,4 +12,4 @@ well as in the LICENSE file. This is the same license used as the retry library.
 ## TODO
 * `recovering` is a bit weird, it does not take into account that errors can change from iteration to iteration
 * Reader for passing in RetryPolicy
-* Syntax
+* Fiddle with imports
