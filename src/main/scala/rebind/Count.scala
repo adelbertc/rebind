@@ -18,7 +18,7 @@ sealed abstract class Count {
       case Infinite  => false
     }
 
-  def <=(m: Int): Boolean = <(m) && ===(m)
+  def <=(m: Int): Boolean = <(m) || ===(m)
 
   def >(m: Int): Boolean = !(<=(m))
 

@@ -2,7 +2,8 @@ package rebind
 
 import scala.concurrent.duration._
 
-import scalaz.{ DisjunctionT, Monad, Monoid }
+import scalaz.{ Disjunction, DisjunctionT, DLeft, DRight, Monad, Monoid }
+import scalaz.syntax.monad._
 
 /** Retry policy.
   *
@@ -40,35 +41,46 @@ final case class RetryPolicy(run: Int => Option[FiniteDuration]) extends AnyVal 
 
   /** Keep retrying failures until success or the policy is exhausted */
   def retrying[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(handler: E => DisjunctionT[F, E, A]): DisjunctionT[F, E, A] = {
-    def go(n: Int): DisjunctionT[F, E, A] =
-      for {
-        b <-  DisjunctionT.right(action.isLeft)
-        r <-  if (b) run(n).fold(action) { delay =>
-                for {
-                  _ <- DisjunctionT.right(Monad[F].point(Thread.sleep(delay.toMillis)))
-                  s <- go(n + 1)
-                } yield s
-              } else action
-      } yield r
+    def go(n: Int): F[Disjunction[E, A]] = {
+      val rawAction = action.run
 
-    go(0)
+      Monad[F].bind(rawAction) { d =>
+        d match {
+          case DLeft(e) =>
+            run(n).fold(Monad[F].point(d)) { delay =>
+              for {
+                _ <- Monad[F].point(DRight(Thread.sleep(delay.toMillis)))
+                s <- go(n + 1)
+              } yield s
+            }
+          case DRight(a) => Monad[F].point(d)
+        }
+      }
+    }
+
+    DisjunctionT(go(0))
   }
 
   /** Retry failures a different number of times depending on the error, or halt when the policy is exhausted */
   def recovering[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(handler: E => Count): DisjunctionT[F, E, A] = {
-    val swappedAction = action.swap
+    def go(n: Int): F[Disjunction[E, A]] = {
+      val rawAction = action.run
 
-    def go(n: Int): DisjunctionT[F, A, E] =
-      for {
-        e <-  swappedAction
-        r <-  run(n).filter(Function.const(handler(e) >= n)).fold(swappedAction) { delay =>
-                for {
-                  _ <- DisjunctionT.right(Monad[F].point(Thread.sleep(delay.toMillis)))
-                  r <- go(n + 1)
-                } yield r
-              }
-      } yield r
-    go(0).swap
+      Monad[F].bind(rawAction) { d =>
+        d match {
+          case DLeft(e) =>
+            run(n).filter(Function.const(handler(e) > n)).fold(Monad[F].point(d)) { delay =>
+              for {
+                _ <- Monad[F].point(DRight(Thread.sleep(delay.toMillis)))
+                s <- go(n + 1)
+              } yield s
+            }
+          case DRight(a) => Monad[F].point(d)
+        }
+      }
+    }
+
+    DisjunctionT(go(0))
   }
 
   /** Keep retrying on all errors until the policy is exhausted */
