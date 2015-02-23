@@ -43,7 +43,3 @@ Ended with error  // immediate
 ## License
 Code provided under the BSD-3 license available at http://opensource.org/licenses/BSD-3-Clause, as
 well as in the LICENSE file. This is the same license used as the retry library.
-
-## TODO
-* `recovering` is a bit weird, it does not take into account that errors can change from iteration to iteration
-* Make stack safe
