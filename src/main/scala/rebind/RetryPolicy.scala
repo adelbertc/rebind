@@ -44,21 +44,23 @@ final case class RetryPolicy(private val run: Int => Option[FiniteDuration]) {
     * Stack safe so long as `F[_]` is.
     */
   def retrying[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(handler: E => DisjunctionT[F, E, A]): DisjunctionT[F, E, A] = {
-    def go(n: Int): F[Disjunction[E, A]] =
-      Monad[F].bind(action.run) { d =>
+    def go(newAction: DisjunctionT[F, E, A], n: Int): F[Disjunction[E, A]] =
+      Monad[F].bind(newAction.run) { d =>
+        val pointed = Monad[F].point(d)
+
         d match {
           case DLeft(e) =>
-            run(n).fold(Monad[F].point(d)) { delay =>
+            run(n).fold(pointed) { delay =>
               for {
                 _ <- Monad[F].point(DRight(Thread.sleep(delay.toMillis)))
-                s <- go(n + 1)
+                s <- go(handler(e), n + 1)
               } yield s
             }
-          case DRight(a) => Monad[F].point(d)
+          case DRight(a) => pointed
         }
       }
 
-    DisjunctionT(go(0))
+    DisjunctionT(go(action, 0))
   }
 
   /** Retry with error-specific limits, or when the policy is exhausted.
