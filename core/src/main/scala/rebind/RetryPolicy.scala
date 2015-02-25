@@ -134,6 +134,8 @@ trait RetryPolicyFunctions {
   def constantDelay(delay: FiniteDuration): RetryPolicy =
     alwaysWith(delay)(identity)
 
+  def immediate: RetryPolicy = constantDelay(Duration.Zero)
+
   /** Exponential backoff, iterating indefinitely with a seed duration */
   def exponentialBackoff(base: FiniteDuration): RetryPolicy =
     RetryPolicy(n => Option(base * math.pow(2, n.toDouble).toLong))

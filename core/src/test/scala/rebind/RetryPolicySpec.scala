@@ -42,7 +42,6 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
   final case object Uh extends UhOh
   final case object Oh extends UhOh
 
-  val immediatePolicy = RetryPolicy.constantDelay(Duration.Zero)
   val failingAction = DisjunctionT.left[Name, Oops.type, Unit](Name(Oops)) // always fail
   val rightUnit = Disjunction.right(())
 
@@ -56,7 +55,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
     val action = makeFailedAction(positive, Oops)
 
     var counter = 0
-    val retriedAction = immediatePolicy.retrying(action.run()) { _ => counter += 1; action.run() }
+    val retriedAction = RetryPolicy.immediate.retrying(action.run()) { _ => counter += 1; action.run() }
     (retriedAction.run.value mustEqual rightUnit) and (counter mustEqual positive)
   }
 
@@ -77,7 +76,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
     val action = makeFailedAction(positive, Oops)
 
-    val retriedAction = immediatePolicy.recovering(action.run())(_ => Count.Infinite)
+    val retriedAction = RetryPolicy.immediate.recovering(action.run())(_ => Count.Infinite)
     retriedAction.run.value mustEqual rightUnit
   }
 
@@ -87,7 +86,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
     val action = makeFailedAction[UhOh](positive, Uh)
 
     val retriedAction =
-      immediatePolicy.recovering(action.run()) {
+      RetryPolicy.immediate.recovering(action.run()) {
         case Uh => Count.Finite(positive)
         case Oh => Count.Infinite
       }
@@ -106,7 +105,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       val action = makeFailedAction[UhOh](higher, Uh)
 
       val retriedAction =
-        immediatePolicy.recovering(action.run()) {
+        RetryPolicy.immediate.recovering(action.run()) {
           case Uh => Count.Finite(lower)
           case Oh => Count.Infinite
         }
@@ -117,7 +116,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
   def recoveringObey = prop { (i: Byte) =>
     val positive = (i + 1).abs
 
-    val retriedAction = immediatePolicy.recovering(failingAction)(_ => Count.Finite(positive))
+    val retriedAction = RetryPolicy.immediate.recovering(failingAction)(_ => Count.Finite(positive))
     retriedAction.run.value mustEqual failingAction.run.value
   }
 
@@ -136,7 +135,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
     val positive = (i + 1).abs
 
     val action = makeFailedAction(positive, Oops)
-    val retriedAction = immediatePolicy.recoverAll(action.run())
+    val retriedAction = RetryPolicy.immediate.recoverAll(action.run())
     retriedAction.run.value mustEqual rightUnit
   }
 
