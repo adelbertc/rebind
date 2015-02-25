@@ -1,8 +1,6 @@
-name := "rebind"
+organization in ThisBuild := "com.adelbertc"
 
-organization := "com.adelbertc"
-
-licenses += ("BSD-3-Clause", url("http://opensource.org/licenses/BSD-3-Clause"))
+licenses in ThisBuild += ("BSD-3-Clause", url("http://opensource.org/licenses/BSD-3-Clause"))
 
 scalaVersion in ThisBuild := "2.11.5"
 
