@@ -1,8 +1,5 @@
 package rebind
 
-import scalaz.{ Order, Ordering }
-import scalaz.std.anyVal.intInstance
-
 sealed abstract class Count {
   import Count._
 
