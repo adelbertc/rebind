@@ -48,9 +48,10 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
   /* RetryPolicy#retrying */
 
-  // using Short because `scalaz.Name` is not stack safe
+  // using Byte because `scalaz.Name` is not stack safe
   def retryingUntilSuccess = prop { (i: Byte) =>
-    val positive = (i + 1).abs
+    val int = i.toInt + 1
+    val positive = int.abs
 
     val action = makeFailedAction(positive, Oops)
 

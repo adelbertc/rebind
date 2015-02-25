@@ -2,15 +2,15 @@ name := "rebind-core"
 
 organization := "com.adelbertc"
 
-resolvers in ThisBuild += "bintray/non" at "http://dl.bintray.com/non/maven"
-
-addCompilerPlugin("org.spire-math" % "kind-projector_2.11" % "0.5.2")
+resolvers += "bintray/non" at "http://dl.bintray.com/non/maven"
 
 val scalazVersion = "7.1.1"
 
 val specs2Version = "2.4.15"
 
 libraryDependencies ++= Seq(
+  compilerPlugin("org.spire-math" %% "kind-projector" % "0.5.2"),
+
   "org.scalaz"      %% "scalaz-core"                % scalazVersion,
   "org.scalacheck"  %% "scalacheck"                 % "1.12.2"          % "test",
   "org.scalaz"      %% "scalaz-scalacheck-binding"  % scalazVersion     % "test",

@@ -4,6 +4,8 @@ licenses in ThisBuild += ("BSD-3-Clause", url("http://opensource.org/licenses/BS
 
 scalaVersion in ThisBuild := "2.11.5"
 
+crossScalaVersions in ThisBuild := List("2.10.4", scalaVersion.value)
+
 scalacOptions in ThisBuild ++= Seq(
   "-deprecation",
   "-encoding", "UTF-8",
@@ -13,18 +15,13 @@ scalacOptions in ThisBuild ++= Seq(
   "-language:higherKinds",
   "-language:implicitConversions",
   "-unchecked",
+  "-Xfatal-warnings",
   "-Xlint",
   "-Xlog-reflective-calls",
   "-Yno-adapted-args",
   "-Ywarn-dead-code",
   "-Ywarn-numeric-widen",
-  "-Ywarn-unused",
   "-Ywarn-value-discard"
-)
-
-scalacOptions in compile ++= Seq(
-  "-Xfatal-warnings",
-  "-Ywarn-unused-import"
 )
 
 lazy val core = project.in(file("core"))
