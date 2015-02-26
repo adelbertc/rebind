@@ -142,6 +142,7 @@ trait RetryPolicyFunctions {
 
   /** Fibonacci backoff, iterating indefinitely with a seed duration */
   def fibonacciBackoff(base: FiniteDuration): RetryPolicy = {
+    @annotation.tailrec
     def fibonacci(n: Int, state: (FiniteDuration, FiniteDuration)): FiniteDuration =
       n match {
         case 0 => state._1
