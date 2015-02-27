@@ -4,7 +4,7 @@ package syntax
 import scalaz.{ DisjunctionT, Kleisli, Monad }
 
 trait KleisliSyntax {
-  implicit def readerSyntax[F[_], E, A](action: DisjunctionT[F, E, A]): KleisliOps[F, E, A] =
+  implicit def kleisliSyntax[F[_], E, A](action: DisjunctionT[F, E, A]): KleisliOps[F, E, A] =
     new KleisliOps(action)
 }
 
