@@ -17,3 +17,5 @@ libraryDependencies ++= Seq(
   "org.specs2"      %% "specs2-core"                % specs2Version     % "test",
   "org.specs2"      %% "specs2-scalacheck"          % specs2Version     % "test"
 )
+
+seq(bintraySettings:_*)
