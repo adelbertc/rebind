@@ -4,7 +4,7 @@ Rebind is a Scala port/remake of the Haskell [retry](https://hackage.haskell.org
 of the main differences is it is designed to work with `DisjunctionT`'s instead of `MonadIO` things.
 
 ## Getting Started
-*0.1* is intended to be a *preview release* for those who want to play around with Rebind. Despite the
+**0.1** is intended to be a **preview release** for those who want to play around with Rebind. Despite the
 small bit of code that it is, there may well be breaking changes in the following versions.
 
 Rebind is cross-built/published against Scala 2.10 and 2.11 with
@@ -26,7 +26,7 @@ as well as in the [tests](https://github.com/adelbertc/rebind/tree/master/core/s
 Because Rebind abstracts out the `F[_] : Monad` used in the `DisjunctionT`, it should (hopefully) be pretty easy
 to make it work with libraries like [Doobie](https://github.com/tpolecat/doobie) or
 [Dispatch](http://dispatch.databinder.net/Dispatch.html). The general idea is to get your "action" (probably
-in the form of `scalaz.concurrent.Task` or `scalaz.effect.IO`) and then use `Rebind` to specify how you want to
+in the form of `scalaz.concurrent.Task` or `scalaz.effect.IO`) and then use Rebind to specify how you want to
 retry in the case of failure to get a new retrying action back. The operations are stack stafe so long as `F[_]`
 is - common examples are `Task` and `IO`.
 
