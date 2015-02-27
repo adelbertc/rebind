@@ -126,13 +126,13 @@ trait RetryPolicyFunctions {
   def limitRetries(i: Int): RetryPolicy =
     RetryPolicy(n => if (n < i) Option(Duration.Zero) else None)
 
-  /** Infinitely retry, starting at the specified base and iterating */
-  def alwaysWith(base: FiniteDuration)(f: FiniteDuration => FiniteDuration): RetryPolicy =
+  /** Constantly retry, starting at the specified base and iterating */
+  def iterateDelay(base: FiniteDuration)(f: FiniteDuration => FiniteDuration): RetryPolicy =
     RetryPolicy(Function.const(Option(f(base))))
 
   /** Constantly retry, pausing a fixed amount in between */
   def constantDelay(delay: FiniteDuration): RetryPolicy =
-    alwaysWith(delay)(identity)
+    iterateDelay(delay)(identity)
 
   def immediate: RetryPolicy = constantDelay(Duration.Zero)
 
