@@ -18,6 +18,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       RetryPolicy is a lawful monoid  ${monoid.laws[RetryPolicy]}
 
     RetryPolicy#retrying
+      uses handler                    ${retryingUsesHandler}
       retries until success           ${retryingUntilSuccess}
       exhausts policy                 ${retryingExhaustPolicy}
 
@@ -33,8 +34,8 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       exhausts policy                 ${recoverAllExhaustPolicy}
     """
 
-  def makeFailedAction[E](n: Int, error: E): FailingAction[E] =
-    new FailingAction(n, error)
+  def makeFailedAction[E, A](n: Int, error: E, success: A): FailingAction[E, A] =
+    new FailingAction(n, error, success)
 
   final case object Oops
 
@@ -47,12 +48,30 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
   /* RetryPolicy#retrying */
 
+  def retryingUsesHandler = {
+    val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
+
+    val recoverString = "recovered"
+    val recoveringAction = DisjunctionT.right[Name, UhOh, String](Name(recoverString))
+
+    val shouldNotBeString = "should not happen"
+    val shouldNotBeAction = DisjunctionT.right[Name, UhOh, String](Name(shouldNotBeString))
+
+    val retriedAction =
+      RetryPolicy.immediate.retrying(failWithUhAction) {
+        case Uh => recoveringAction
+        case Oh => shouldNotBeAction
+      }
+
+    retriedAction.run.value mustEqual Disjunction.right(recoverString)
+  }
+
   // using Byte because `scalaz.Name` is not stack safe
   def retryingUntilSuccess = prop { (i: Byte) =>
     val int = i.toInt + 1
     val positive = int.abs
 
-    val action = makeFailedAction(positive, Oops)
+    val action = makeFailedAction(positive, Oops, ())
 
     var counter = 0
     val retriedAction = RetryPolicy.immediate.retrying(action.run()) { _ => counter += 1; action.run() }
@@ -74,7 +93,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
   def recoveringUntilSuccess = prop { (i: Byte) =>
     val positive = (i + 1).abs
 
-    val action = makeFailedAction(positive, Oops)
+    val action = makeFailedAction(positive, Oops, ())
 
     val retriedAction = RetryPolicy.immediate.recovering(action.run())(_ => Count.Infinite)
     retriedAction.run.value mustEqual rightUnit
@@ -83,7 +102,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
   def recoveringErrorSpecificSuccess = prop { (i: Byte) =>
     val positive = (i + 1).abs
 
-    val action = makeFailedAction[UhOh](positive, Uh)
+    val action = makeFailedAction[UhOh, Unit](positive, Uh, ())
 
     val retriedAction =
       RetryPolicy.immediate.recovering(action.run()) {
@@ -102,7 +121,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       val lower = i.min(j).toInt - 1
       val higher = i.max(j).toInt
 
-      val action = makeFailedAction[UhOh](higher, Uh)
+      val action = makeFailedAction[UhOh, Unit](higher, Uh, ())
 
       val retriedAction =
         RetryPolicy.immediate.recovering(action.run()) {
@@ -134,7 +153,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
   def recoverAllUntilSuccess = prop { (i: Byte) =>
     val positive = (i + 1).abs
 
-    val action = makeFailedAction(positive, Oops)
+    val action = makeFailedAction(positive, Oops, ())
     val retriedAction = RetryPolicy.immediate.recoverAll(action.run())
     retriedAction.run.value mustEqual rightUnit
   }
@@ -168,14 +187,14 @@ trait OrphanInstances {
     Equal.equal(_ == _)
 }
 
-class FailingAction[E](private var n: Int, private val error: E) {
-  def run(): DisjunctionT[Name, E, Unit] =
+class FailingAction[E, A](private var n: Int, private val error: E, private val success: A) {
+  def run(): DisjunctionT[Name, E, A] =
     DisjunctionT {
       Name {
         if (n > 0) {
           n -= 1
           Disjunction.left(error)
-        } else Disjunction.right(())
+        } else Disjunction.right(success)
       }
     }
 }
