@@ -1,6 +1,6 @@
 organization in ThisBuild := "com.adelbertc"
 
-version in ThisBuild := "0.1.0-SNAPSHOT"
+version in ThisBuild := "0.1.0"
 
 licenses in ThisBuild += ("BSD New", url("http://opensource.org/licenses/BSD-3-Clause"))
 
