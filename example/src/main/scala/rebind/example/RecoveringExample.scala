@@ -36,7 +36,7 @@ object RecoveringExample extends SafeApp {
     val retryingAction =
       policy.recovering(ew) {
         case Uh => 5.times // Retry on Uh as long as total # of retries is < 5
-        case Oh => 4.time  // Retry on Oh as long as total # of retries is < 4
+        case Oh => 4.times // Retry on Oh as long as total # of retries is < 4
       }
 
     retryingAction.run.flatMap {
