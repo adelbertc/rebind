@@ -2,7 +2,8 @@ package rebind
 
 import scala.concurrent.duration._
 
-import scalaz.{ Disjunction, DisjunctionT, DLeft, DRight, Monad, Monoid }
+import scalaz.{ Apply, Disjunction, DisjunctionT, DLeft, DRight, Monad, Monoid }
+import scalaz.std.option._
 import scalaz.syntax.monad._
 
 /** Retry policy.
@@ -29,12 +30,7 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     * }}}
     */
   def &&(other: RetryPolicy): RetryPolicy =
-    RetryPolicy { n =>
-      for {
-        a <- this.run(n)
-        b <- other.run(n)
-      } yield a.max(b)
-    }
+    RetryPolicy(n => Apply[Option].apply2(this.run(n), other.run(n))(_ max _))
 
   /** Alias for `&&` */
   def and(other: RetryPolicy): RetryPolicy = this && other
@@ -87,15 +83,17 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
   def recovering[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
     def go(n: Int): F[Disjunction[E, A]] =
       Monad[F].bind(action.run) { d =>
+        val pointed = Monad[F].point(d)
+
         d match {
           case DLeft(e) =>
-            run(n).filter(Function.const(limits(e) > n)).fold(Monad[F].point(d)) { delay =>
+            run(n).filter(Function.const(limits(e) > n)).fold(pointed) { delay =>
               for {
                 _ <- Monad[F].point(DRight(Thread.sleep(delay.toMillis)))
                 s <- go(n + 1)
               } yield s
             }
-          case DRight(a) => Monad[F].point(d)
+          case DRight(a) => pointed
         }
       }
 
