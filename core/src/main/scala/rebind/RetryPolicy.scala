@@ -4,7 +4,7 @@ import scala.concurrent.duration._
 
 import scalaz.{ Apply, Disjunction, DisjunctionT, DLeft, DRight, Monad, Monoid }
 import scalaz.std.option._
-import scalaz.syntax.monad._
+import scalaz.syntax.apply._
 
 /** Retry policy.
   *
@@ -47,10 +47,7 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
         d match {
           case DLeft(e) =>
             run(n).fold(pointed) { delay =>
-              for {
-                _ <- Monad[F].point(DRight(Thread.sleep(delay.toMillis)))
-                s <- go(handler(e), n + 1)
-              } yield s
+              Monad[F].point(DRight(Thread.sleep(delay.toMillis))) *> go(handler(e), n + 1)
             }
           case DRight(a) => pointed
         }
@@ -88,10 +85,7 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
         d match {
           case DLeft(e) =>
             run(n).filter(Function.const(limits(e) > n)).fold(pointed) { delay =>
-              for {
-                _ <- Monad[F].point(DRight(Thread.sleep(delay.toMillis)))
-                s <- go(n + 1)
-              } yield s
+              Monad[F].point(DRight(Thread.sleep(delay.toMillis))) *> go(n + 1)
             }
           case DRight(a) => pointed
         }
