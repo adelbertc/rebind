@@ -2,11 +2,14 @@ name := "rebind-core"
 
 organization := "com.adelbertc"
 
-resolvers += "bintray/non" at "http://dl.bintray.com/non/maven"
+resolvers ++= Seq(
+  "bintray/non"     at "http://dl.bintray.com/non/maven",
+  "scalaz-bintray"  at "http://dl.bintray.com/scalaz/releases"
+)
 
 val scalazVersion = "7.1.1"
 
-val specs2Version = "2.4.15"
+val specs2Version = "3.0"
 
 libraryDependencies ++= Seq(
   compilerPlugin("org.spire-math" %% "kind-projector" % "0.5.2"),
