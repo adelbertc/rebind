@@ -2,7 +2,8 @@ package rebind
 
 import scala.concurrent.duration._
 
-import scalaz.{ Apply, Disjunction, DisjunctionT, DLeft, DRight, Monad, Monoid }
+import scalaz.{ Apply, Disjunction, DisjunctionT, DLeft, DRight, Equal, Foldable, IList, Monad, Monoid, Zipper }
+import scalaz.std.anyVal.intInstance
 import scalaz.std.option._
 import scalaz.syntax.apply._
 
@@ -35,28 +36,7 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
   /** Alias for `&&` */
   def and(other: RetryPolicy): RetryPolicy = this && other
 
-  /** Keep retrying failures until success or the policy is exhausted.
-    *
-    * Stack safe so long as `F[_]` is.
-    */
-  def retrying[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(handler: E => DisjunctionT[F, E, A]): DisjunctionT[F, E, A] = {
-    def go(newAction: DisjunctionT[F, E, A], n: Int): F[Disjunction[E, A]] =
-      Monad[F].bind(newAction.run) { d =>
-        val pointed = Monad[F].point(d)
-
-        d match {
-          case DLeft(e) =>
-            run(n).fold(pointed) { delay =>
-              Monad[F].point(DRight(Thread.sleep(delay.toMillis))) *> go(handler(e), n + 1)
-            }
-          case DRight(a) => pointed
-        }
-      }
-
-    DisjunctionT(go(action, 0))
-  }
-
-  /** Retry with error-specific limits, or when the policy is exhausted.
+  /** Retry with error-specific limits on total number of errors, or when the policy is exhausted.
     *
     * The limits indicated are compared to the total number of times the action has been retried,
     * across *all* errors. For instance, if we have:
@@ -66,7 +46,7 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     * final case object A extends UhOh
     * final case object B extends UhOh
     *
-    * somePolicy.recovering(someAction) {
+    * somePolicy.boundError(someAction) {
     *   case A => 2.times
     *   case B => 1.time
     * }
@@ -77,21 +57,35 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     *
     * Stack safe so long as `F[_]` is.
     */
-  def recovering[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
-    def go(n: Int): F[Disjunction[E, A]] =
-      Monad[F].bind(action.run) { d =>
-        val pointed = Monad[F].point(d)
+  def boundError[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
+    val unwrapped = action.run
+    unfold(unwrapped, ())(Function.const(unwrapped), (e, _, n) => if (limits(e) >= n) Some(()) else None)
+  }
 
-        d match {
-          case DLeft(e) =>
-            run(n).filter(Function.const(limits(e) > n)).fold(pointed) { delay =>
-              Monad[F].point(DRight(Thread.sleep(delay.toMillis))) *> go(n + 1)
-            }
-          case DRight(a) => pointed
-        }
+  /** Retry with error-specific limits, or when policy is exhausted.
+    *
+    * Limits are compared against the total number of times the error has occured so far,
+    * regardless of when they occured (e.g. occured non-consecutively).
+    */
+  def recover[F[_] : Monad, E : Equal, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
+    def checkError(error: E, history: IList[(E, Int)], iteration: Int): Option[IList[(E, Int)]] =
+      limits(error) match {
+        case Count.Finite(0) => None
+        case _ =>
+          history.toZipper.flatMap(_.findNext(p => Equal[E].equal(error, p._1))) match {
+            case None => Option((error, 1) :: history)
+            case Some(z) =>
+              val newCount = z.focus._2 + 1
+              if (limits(error) >= newCount) {
+                val updatedZipper = z.modify { case (e, _) => (e, newCount) }
+                Option(Foldable[Zipper].foldRight(updatedZipper, IList.empty[(E, Int)])(_ :: _))
+              } else None
+          }
       }
 
-    DisjunctionT(go(0))
+    val unwrapped = action.run
+
+    unfold(unwrapped, IList.empty[(E, Int)])(Function.const(unwrapped), checkError)
   }
 
   /** Keep retrying on all errors until the policy is exhausted.
@@ -99,7 +93,62 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     * Stack safe so long as `F[_]` is.
     */
   def recoverAll[F[_] : Monad, E, A](action: DisjunctionT[F, E, A]): DisjunctionT[F, E, A] =
-    recovering(action)(Function.const(Count.Infinite))
+    boundError(action)(Function.const(Count.Infinite))
+
+  /** Retry with error-specific limits on consecutive errors, or when policy is exhausted.
+    *
+    * Limits are compared against consecutive occurences. For instance, if a particular error
+    * is mapped to `5.times` and so far it has failed consecutively 4 times but then fails with
+    * a different error, the count is reset.
+    */
+  def recoverConsecutive[F[_] : Monad, E : Equal, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
+    def checkError(error: E, count: (Option[E], Int), iteration: Int): Option[(Option[E], Int)] =
+      count match {
+        // first iteration
+        case (None, _) => Option((Option(error), 1))
+
+        // same error as last iteration
+        case (s@Some(e), n) if Equal[E].equal(e, error) =>
+          val newCount = n + 1
+          if (limits(error) >= newCount) Option((s, newCount))
+          else None
+
+        // different error as last iteration
+        case (Some(e), n) => Option((Option(e), 1))
+      }
+
+    val unwrapped = action.run
+
+    unfold(unwrapped, (Option.empty[E], 0))(Function.const(unwrapped), checkError)
+  }
+
+  /** Keep retrying failures until success or the policy is exhausted.
+    *
+    * Stack safe so long as `F[_]` is.
+    */
+  def retrying[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(handler: E => DisjunctionT[F, E, A]): DisjunctionT[F, E, A] =
+    unfold(action.run, ())(e => handler(e).run, (_, _, _) => Option(()))
+
+  private def unfold[F[_] : Monad, E, A, S](currentAction: F[Disjunction[E, A]], firstState: S)(
+                                            next: E => F[Disjunction[E, A]],
+                                            p: (E, S, Int) => Option[S]): DisjunctionT[F, E, A] = {
+    def go(action: F[Disjunction[E, A]], n: Int, state: S): F[Disjunction[E, A]] =
+      Monad[F].bind(action) { d =>
+        val pointed = Monad[F].point(d)
+
+        d match {
+          case DLeft(e) =>
+            Apply[Option].tuple2(run(n), p(e, state, n)).fold(pointed) {
+              case (delay, nextState) =>
+                Monad[F].point(DRight(Thread.sleep(delay.toMillis))) *> go(next(e), n + 1, nextState)
+            }
+          case DRight(_) => pointed
+        }
+      }
+
+    DisjunctionT(go(currentAction, 0, firstState))
+  }
+
 }
 
 object RetryPolicy extends RetryPolicyInstances with RetryPolicyFunctions
