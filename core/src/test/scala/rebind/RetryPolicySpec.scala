@@ -46,6 +46,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       uses handler                    ${retryingUsesHandler}
       retries until success           ${retryingUntilSuccess}
       exhausts policy                 ${retryingExhaustPolicy}
+      can iterate                     ${iterateDelay}
     """
 
   def makeFailedAction[E, A](n: Int, error: E, success: A): FailingAction[E, A] =
@@ -293,6 +294,14 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
     var counter = 0
     val retriedAction = policy.retrying(failingAction) { _ => counter += 1; failingAction }
     (retriedAction.run.value mustEqual failingAction.run.value) and (counter mustEqual positive)
+  }
+
+  def iterateDelay = {
+    val policy = RetryPolicy.iterateDelay(1.second)(_ * 2)
+
+    policy.run(0) mustEqual Some(1.second)
+    policy.run(1) mustEqual Some(2.seconds)
+    policy.run(2) mustEqual Some(4.seconds)
   }
 }
 
