@@ -236,19 +236,19 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 }
 
 trait RetryPolicySpecInstances extends OrphanInstances {
-  implicit val retryPolicyEqualInstance: Equal[RetryPolicy] =
+  implicit val retryPolicyEqual: Equal[RetryPolicy] =
     Equal.equalBy(_.run(0))
 
-  implicit val retryPolicyArbitraryInstance: Arbitrary[RetryPolicy] =
+  implicit val retryPolicyArbitrary: Arbitrary[RetryPolicy] =
     Arbitrary(arbitrary[Int => Option[FiniteDuration]].map(RetryPolicy.apply))
 }
 
 trait OrphanInstances {
-  implicit val finiteDurationArbitraryInstance: Arbitrary[FiniteDuration] = {
+  implicit val finiteDurationArbitrary: Arbitrary[FiniteDuration] = {
     val bound = math.pow(2, 63).toLong - 1
 
     Arbitrary(Gen.chooseNum(0L, bound).map(_.nanoseconds))
   }
 
-  implicit val finiteDurationEqualInstance: Equal[FiniteDuration] = Equal.equalA
+  implicit val finiteDurationEqual: Equal[FiniteDuration] = Equal.equalA
 }

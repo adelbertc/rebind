@@ -8,6 +8,6 @@ final case class PositiveByte(byte: Byte) extends AnyVal {
 }
 
 object PositiveByte {
-  implicit val positiveByteInstance: Arbitrary[PositiveByte] =
+  implicit val positiveByteArbitrary: Arbitrary[PositiveByte] =
     Arbitrary(Gen.chooseNum[Byte](1, Byte.MaxValue).map(PositiveByte.apply))
 }
