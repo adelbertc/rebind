@@ -27,5 +27,3 @@ scalacOptions in ThisBuild ++= Seq(
 )
 
 lazy val core = project.in(file("core"))
-
-lazy val example = project.in(file("example")).dependsOn(core)

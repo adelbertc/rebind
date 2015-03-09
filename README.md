@@ -20,8 +20,7 @@ libraryDependencies += "com.adelbertc" %% "rebind-core" % "0.1.0"
 
 ### Usage
 Example usage can be found in the
-[example](https://github.com/adelbertc/rebind/tree/master/example/src/main/scala/rebind/example) sub-project,
-as well as in the [tests](https://github.com/adelbertc/rebind/tree/master/core/src/test/scala/rebind).
+[tests](https://github.com/adelbertc/rebind/tree/master/core/src/test/scala/rebind).
 
 Because Rebind abstracts out the `F[_] : Monad` used in the `DisjunctionT`, it should (hopefully) be pretty easy
 to make it work with libraries like [Doobie](https://github.com/tpolecat/doobie) or
