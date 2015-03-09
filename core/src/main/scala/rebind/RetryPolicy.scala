@@ -178,7 +178,7 @@ trait RetryPolicyFunctions {
 
   /** Constantly retry, starting at the specified base and iterating */
   def iterateDelay(base: FiniteDuration)(f: FiniteDuration => FiniteDuration): RetryPolicy =
-    RetryPolicy(Function.const(Option(f(base))))
+    RetryPolicy(n => Option(Stream.iterate(base)(f)(n)))
 
   /** Constantly retry, pausing a fixed amount in between */
   def constantDelay(delay: FiniteDuration): RetryPolicy =
