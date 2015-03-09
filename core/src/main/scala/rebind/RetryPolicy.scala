@@ -59,7 +59,7 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     */
   def boundError[F[_] : Monad, E, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
     val unwrapped = action.run
-    unfold(unwrapped, ())(Function.const(unwrapped), (e, _, n) => if (limits(e) >= n) Some(()) else None)
+    unfold(unwrapped, ())(Function.const(unwrapped), (e, _, n) => if (limits(e) > n) Some(()) else None)
   }
 
   /** Retry with error-specific limits, or when policy is exhausted.
@@ -72,7 +72,12 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
       limits(error) match {
         case Count.Finite(0) => None
         case _ =>
-          history.toZipper.flatMap(_.findNext(p => Equal[E].equal(error, p._1))) match {
+          val zipper = history.toZipper.flatMap { z =>
+            if (Equal[E].equal(z.focus._1, error)) Option(z)
+            else z.findNext(p => Equal[E].equal(p._1, error))
+          }
+
+          zipper match {
             case None => Option((error, 1) :: history)
             case Some(z) =>
               val newCount = z.focus._2 + 1
@@ -102,24 +107,28 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     * a different error, the count is reset.
     */
   def recoverConsecutive[F[_] : Monad, E : Equal, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
-    def checkError(error: E, count: (Option[E], Int), iteration: Int): Option[(Option[E], Int)] =
+    def checkError(error: E, count: Option[(E, Int)], iteration: Int): Option[(Option[(E, Int)])] =
       count match {
         // first iteration
-        case (None, _) => Option((Option(error), 1))
+        case None =>
+          if (limits(error) > 0) Option(Option((error, 1)))
+          else None
 
         // same error as last iteration
-        case (s@Some(e), n) if Equal[E].equal(e, error) =>
+        case Some((e, n)) if Equal[E].equal(e, error) =>
           val newCount = n + 1
-          if (limits(error) >= newCount) Option((s, newCount))
+          if (limits(error) >= newCount) Option(Option((e, newCount)))
           else None
 
         // different error as last iteration
-        case (Some(e), n) => Option((Option(e), 1))
+        case Some((e, _)) =>
+          if (limits(error) > 0) Option(Option((error, 1)))
+          else None
       }
 
     val unwrapped = action.run
 
-    unfold(unwrapped, (Option.empty[E], 0))(Function.const(unwrapped), checkError)
+    unfold(unwrapped, (Option.empty[(E, Int)]))(Function.const(unwrapped), checkError)
   }
 
   /** Keep retrying failures until success or the policy is exhausted.
