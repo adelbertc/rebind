@@ -14,6 +14,14 @@ import scalaz.std.AllInstances._
 class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpecInstances {
   def is =
     s2"""
+    capDelay                          ${capDelay}
+    limitRetries                      ${limitRetries}
+    iterateDelay                      ${iterateDelay}
+    constantDelay                     ${constantDelay}
+    immediate                         ${immediate}
+    exponentialBackoff                ${exponentialBackoff}
+    fibonaciBackoff                   ${fibonaciBackoff}
+
     law checking
       monoid                          ${monoid.laws[RetryPolicy]}
 
@@ -46,8 +54,6 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       uses handler                    ${retryingUsesHandler}
       retries until success           ${retryingUntilSuccess}
       exhausts policy                 ${retryingExhaustPolicy}
-
-    can iterate                       ${iterateDelay}
     """
 
   def makeFailedAction[E, A](n: Int, error: E, success: A): TestAction[E, A] =
@@ -109,6 +115,72 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       retriedAction.run.value mustEqual failingAction.run.value
     }
 
+  def allEqualTo[A](as: List[A], a: A) = as must contain(beEqualTo(a)).forall
+
+  /* Tests */
+
+  def capDelay =
+    prop { (i: FiniteDuration, j: FiniteDuration, tests: List[PositiveInt]) =>
+      val lower = i.min(j)
+      val higher = i.max(j)
+      val policy = RetryPolicy.constantDelay(higher).capDelay(lower)
+
+      allEqualTo(tests.map(test => policy.run(test.int)), Some(lower))
+    }
+
+  def limitRetries =
+    prop { (pb: PositiveByte) =>
+      val i = pb.int
+      val policy = RetryPolicy.limitRetries(i)
+      val before = 0.until(i).toList
+      val after = i.to(Byte.MaxValue).toList
+
+      allEqualTo(before.map(b => policy.run(b)), Some(Duration.Zero)) and
+      allEqualTo(after.map(a => policy.run(a)), None)
+    }
+
+  def iterateDelay = {
+    val policy = RetryPolicy.iterateDelay(1.second)(_ * 10)
+
+    (policy.run(0) must beSome(1.seconds)) and
+    (policy.run(1) must beSome(10.seconds)) and
+    (policy.run(2) must beSome(100.seconds)) and
+    (policy.run(3) must beSome(1000.seconds)) and
+    (policy.run(4) must beSome(10000.seconds))
+  }
+
+  def constantDelay =
+    prop { (delay: FiniteDuration, tests: List[PositiveInt]) =>
+      val policy = RetryPolicy.constantDelay(delay)
+      allEqualTo(tests.map(test => policy.run(test.int)), Some(delay))
+    }
+
+  def immediate =
+    prop { (tests: List[PositiveInt]) =>
+      val policy = RetryPolicy.immediate
+      allEqualTo(tests.map(test => policy.run(test.int)), Some(Duration.Zero))
+    }
+
+  def exponentialBackoff = {
+    val policy = RetryPolicy.exponentialBackoff(1.second)
+
+    (policy.run(0) must beSome(1.second)) and
+    (policy.run(1) must beSome(2.seconds)) and
+    (policy.run(2) must beSome(4.seconds)) and
+    (policy.run(3) must beSome(8.seconds)) and
+    (policy.run(4) must beSome(16.seconds))
+  }
+
+  def fibonaciBackoff = {
+    val policy = RetryPolicy.fibonacciBackoff(1.second)
+
+    (policy.run(0) must beSome(1.second)) and
+    (policy.run(1) must beSome(1.second)) and
+    (policy.run(2) must beSome(2.seconds)) and
+    (policy.run(3) must beSome(3.seconds)) and
+    (policy.run(4) must beSome(5.seconds))
+  }
+
   /* RetryPolicy#boundError */
 
   def boundErrorUntilSuccess = untilSuccess(_.boundError)
@@ -117,10 +189,11 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
   def boundErrorErrorSpecificFailure = errorSpecificFailure(_.boundError)
 
-  def boundErrorObeyLimit = prop { (pb: PositiveByte) =>
-    val retriedAction = RetryPolicy.immediate.boundError(failingAction)(_ => Count.Finite(pb.int))
-    retriedAction.run.value mustEqual failingAction.run.value
-  }
+  def boundErrorObeyLimit =
+    prop { (pb: PositiveByte) =>
+      val retriedAction = RetryPolicy.immediate.boundError(failingAction)(_ => Count.Finite(pb.int))
+      retriedAction.run.value mustEqual failingAction.run.value
+    }
 
   def boundErrorExhaustPolicy = exhaustPolicy(_.boundError)
 
@@ -132,32 +205,34 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
   def recoverErrorSpecificFailure = errorSpecificFailure(_.recover)
 
-  def recoverObeyLimit = prop { (es: List[UhOh]) =>
-    val limited = es.take(Byte.MaxValue)
-    val numberOfOhs = limited.count(Equal[UhOh].equal(Uh, _)) + 1
-    val stream = limited.toStream ++ Stream(Uh) ++ Stream.continually(Oh)
+  def recoverObeyLimit =
+    prop { (es: List[UhOh]) =>
+      val limited = es.take(Byte.MaxValue)
+      val numberOfOhs = limited.count(Equal[UhOh].equal(Uh, _)) + 1
+      val stream = limited.toStream ++ Stream(Uh) ++ Stream.continually(Oh)
 
-    val action = new TestAction(stream, ())
-    val retriedAction =
-      RetryPolicy.immediate.recover(action.run()) {
-        case Uh => Count.Finite(numberOfOhs - 1)
-        case Oh => Count.Infinite
-      }
+      val action = new TestAction(stream, ())
+      val retriedAction =
+        RetryPolicy.immediate.recover(action.run()) {
+          case Uh => Count.Finite(numberOfOhs - 1)
+          case Oh => Count.Infinite
+        }
 
-    retriedAction.run.value mustEqual Disjunction.left(Uh)
-  }
+      retriedAction.run.value mustEqual Disjunction.left(Uh)
+    }
 
   def recoverExhaustPolicy = exhaustPolicy(_.recover)
 
   /* RetryPolicy#recoverAll */
 
-  def recoverAllUntilSuccess = prop { (pb: PositiveByte) =>
-    val positive = pb.int
+  def recoverAllUntilSuccess =
+    prop { (pb: PositiveByte) =>
+      val positive = pb.int
 
-    val action = makeFailedAction(positive, Oops, ())
-    val retriedAction = RetryPolicy.immediate.recoverAll(action.run())
-    retriedAction.run.value mustEqual rightUnit
-  }
+      val action = makeFailedAction(positive, Oops, ())
+      val retriedAction = RetryPolicy.immediate.recoverAll(action.run())
+      retriedAction.run.value mustEqual rightUnit
+    }
 
   def recoverAllExhaustPolicy = {
     val function: PolicyFunction[Oops.type] = policy => action => m => policy.recoverAll(action)
@@ -172,20 +247,21 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
   def recoverConsecutiveErrorSpecificFailure = errorSpecificFailure(_.recoverConsecutive)
 
-  def recoverConsecutiveObeyLimit = prop { (pb: PositiveByte) =>
-    val i = pb.int
-    val first = i - 1
-    val last = i
-    val errors: Stream[UhOh] = Stream.fill(first)(Uh) ++ Stream(Oh) ++ Stream.fill(last + 1)(Uh)
-    val action = new TestAction(errors, ())
-    val retriedAction =
-      RetryPolicy.immediate.recoverConsecutive(action.run()) {
-        case Uh => Count.Finite(last)
-        case Oh => Count.Infinite
-      }
+  def recoverConsecutiveObeyLimit =
+    prop { (pb: PositiveByte) =>
+      val i = pb.int
+      val first = i - 1
+      val last = i
+      val errors: Stream[UhOh] = Stream.fill(first)(Uh) ++ Stream(Oh) ++ Stream.fill(last + 1)(Uh)
+      val action = new TestAction(errors, ())
+      val retriedAction =
+        RetryPolicy.immediate.recoverConsecutive(action.run()) {
+          case Uh => Count.Finite(last)
+          case Oh => Count.Infinite
+        }
 
-    (retriedAction.run.value mustEqual Disjunction.left(Uh)) and (action.run().run.value mustEqual rightUnit)
-  }
+      (retriedAction.run.value mustEqual Disjunction.left(Uh)) and (action.run().run.value mustEqual rightUnit)
+    }
 
   def recoverConsecutiveExhaustPolicy = exhaustPolicy(_.recoverConsecutive)
 
@@ -209,29 +285,22 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
     retriedAction.run.value mustEqual Disjunction.right(recoverString)
   }
 
-  def retryingUntilSuccess = prop { (pb: PositiveByte) =>
-    val positive = pb.int
+  def retryingUntilSuccess =
+    prop { (pb: PositiveByte) =>
+      val positive = pb.int
 
-    val action = makeFailedAction(positive, Oops, ())
+      val action = makeFailedAction(positive, Oops, ())
 
-    var counter = 0
-    val retriedAction = RetryPolicy.immediate.retrying(action.run()) { _ => counter += 1; action.run() }
-    (retriedAction.run.value mustEqual rightUnit) and (counter mustEqual positive)
-  }
+      var counter = 0
+      val retriedAction = RetryPolicy.immediate.retrying(action.run()) { _ => counter += 1; action.run() }
+      (retriedAction.run.value mustEqual rightUnit) and (counter mustEqual positive)
+    }
 
   def retryingExhaustPolicy = {
     val function: PolicyFunction[Oops.type] = policy => action => m =>
       policy.retrying(action)(_ => action)
 
     exhaustPolicy(function)
-  }
-
-  def iterateDelay = {
-    val policy = RetryPolicy.iterateDelay(1.second)(_ * 2)
-
-    (policy.run(0) mustEqual Some(1.second)) and
-    (policy.run(1) mustEqual Some(2.seconds)) and
-    (policy.run(2) mustEqual Some(4.seconds))
   }
 }
 
