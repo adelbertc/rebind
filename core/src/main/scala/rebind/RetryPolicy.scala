@@ -66,6 +66,8 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     *
     * Limits are compared against the total number of times the error has occured so far,
     * regardless of when they occured (e.g. occured non-consecutively).
+    *
+    * Stack safe so long as `F[_]` is.
     */
   def recover[F[_] : Monad, E : Equal, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
     def checkError(error: E, history: IList[(E, Int)], iteration: Int): Option[IList[(E, Int)]] =
@@ -105,6 +107,8 @@ final case class RetryPolicy(private[rebind] val run: Int => Option[FiniteDurati
     * Limits are compared against consecutive occurences. For instance, if a particular error
     * is mapped to `5.times` and so far it has failed consecutively 4 times but then fails with
     * a different error, the count is reset.
+    *
+    * Stack safe so long as `F[_]` is.
     */
   def recoverConsecutive[F[_] : Monad, E : Equal, A](action: DisjunctionT[F, E, A])(limits: E => Count): DisjunctionT[F, E, A] = {
     def checkError(error: E, count: Option[(E, Int)], iteration: Int): Option[(Option[(E, Int)])] =
