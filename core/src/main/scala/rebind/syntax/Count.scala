@@ -6,7 +6,7 @@ trait CountSyntax {
 }
 
 class CountOps(val i: Int) extends AnyVal {
-  def times: Count = Count.Finite(i)
-
   def time: Count = times
+
+  def times: Count = Count.Finite(i)
 }

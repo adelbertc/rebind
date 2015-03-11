@@ -176,19 +176,9 @@ trait RetryPolicyInstances {
 }
 
 trait RetryPolicyFunctions {
-  /** Immediately retry the specified number of times */
-  def limitRetries(i: Int): RetryPolicy =
-    RetryPolicy(n => if (n < i) Option(Duration.Zero) else None)
-
-  /** Constantly retry, starting at the specified base and iterating */
-  def iterateDelay(base: FiniteDuration)(f: FiniteDuration => FiniteDuration): RetryPolicy =
-    RetryPolicy(n => Option(Function.chain(List.fill(n)(f))(base)))
-
   /** Constantly retry, pausing a fixed amount in between */
   def constantDelay(delay: FiniteDuration): RetryPolicy =
     RetryPolicy(Function.const(Option(delay)))
-
-  def immediate: RetryPolicy = constantDelay(Duration.Zero)
 
   /** Exponential backoff, iterating indefinitely with a seed duration */
   def exponentialBackoff(base: FiniteDuration): RetryPolicy =
@@ -205,4 +195,15 @@ trait RetryPolicyFunctions {
 
     RetryPolicy(n => Option(fibonacci(n + 1, (Duration.Zero, base))))
   }
+
+  /** Constantly retry immediately */
+  def immediate: RetryPolicy = constantDelay(Duration.Zero)
+
+  /** Constantly retry, starting at the specified base and iterating */
+  def iterateDelay(base: FiniteDuration)(f: FiniteDuration => FiniteDuration): RetryPolicy =
+    RetryPolicy(n => Option(Function.chain(List.fill(n)(f))(base)))
+
+  /** Immediately retry the specified number of times */
+  def limitRetries(i: Int): RetryPolicy =
+    RetryPolicy(n => if (n < i) Option(Duration.Zero) else None)
 }
