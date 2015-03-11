@@ -1,7 +1,7 @@
 # Rebind
-## Overview
 
 [![Join the chat at https://gitter.im/adelbertc/rebind](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/adelbertc/rebind?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 Rebind is a Scala port/remake of the Haskell [retry](https://hackage.haskell.org/package/retry) library. One
 of the main differences is it is designed to work with `DisjunctionT`'s instead of `MonadIO` things.
 
@@ -10,7 +10,7 @@ of the main differences is it is designed to work with `DisjunctionT`'s instead 
 small bit of code that it is, there may well be breaking changes in the following versions.
 
 Rebind is cross-built/published against Scala 2.10 and 2.11 with
-[Scalaz](https://github.com/scalaz/scalaz) 7.1 - Scalaz is (currently) it's only dependency.
+[Scalaz](https://github.com/scalaz/scalaz) 7.1 - Scalaz is (currently) its only dependency.
 
 To use it in your project, add the following to your SBT build definition:
 
