@@ -4,6 +4,7 @@ import org.scalacheck._
 import org.scalacheck.Arbitrary._
 
 import org.specs2._
+import org.specs2.time.NoTimeConversions
 
 import scala.concurrent.duration._
 
@@ -12,7 +13,7 @@ import scalaz.scalacheck.ScalazProperties.semigroup
 import scalaz.scalacheck.ScalazArbitrary.indexedStateTArb
 import scalaz.std.AllInstances._
 
-class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpecInstances {
+class RetryPolicySpec extends Specification with NoTimeConversions with ScalaCheck with RetryPolicySpecInstances {
   def is =
     s2"""
     capDelay                          ${capDelay}

@@ -9,7 +9,7 @@ resolvers ++= Seq(
 
 val scalazVersion = "7.1.1"
 
-val specs2Version = "3.0.1"
+val specs2Version = "2.4.17"
 
 libraryDependencies ++= Seq(
   compilerPlugin("org.spire-math" %% "kind-projector" % "0.5.2"),
