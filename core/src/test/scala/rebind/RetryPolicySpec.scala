@@ -7,8 +7,9 @@ import org.specs2._
 
 import scala.concurrent.duration._
 
-import scalaz.{ Disjunction, DisjunctionT, Equal, Monad, Name }
-import scalaz.scalacheck.ScalazProperties.monoid
+import scalaz.{ Disjunction, DisjunctionT, Equal, Monad, Name, StateT }
+import scalaz.scalacheck.ScalazProperties.semigroup
+import scalaz.scalacheck.ScalazArbitrary.indexedStateTArb
 import scalaz.std.AllInstances._
 
 class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpecInstances {
@@ -17,20 +18,14 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
     capDelay                          ${capDelay}
     limitRetries                      ${limitRetries}
     iterateDelay                      ${iterateDelay}
+    iterateDelay memoizes             ${iterateDelayMemoize}
     constantDelay                     ${constantDelay}
     immediate                         ${immediate}
     exponentialBackoff                ${exponentialBackoff}
     fibonaciBackoff                   ${fibonaciBackoff}
 
     law checking
-      monoid                          ${monoid.laws[RetryPolicy]}
-
-    boundError
-      retries until success           ${boundErrorUntilSuccess}
-      is error-specific (success)     ${boundErrorErrorSpecificSuccess}
-      is error-specific (failure)     ${boundErrorErrorSpecificFailure}
-      obeys limits                    ${boundErrorObeyLimit}
-      exhausts policy                 ${boundErrorExhaustPolicy}
+      semigroup                       ${semigroup.laws[RetryPolicy]}
 
     recover
       retries until success           ${recoverUntilSuccess}
@@ -56,8 +51,20 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
       exhausts policy                 ${retryingExhaustPolicy}
     """
 
-  val failingAction = DisjunctionT.left[Name, Oops.type, Unit](Name(Oops)) // always fail
+  val failingAction = DisjunctionT.left[Name, Oops.type, Unit](Name(Oops))
+
   val rightUnit = Disjunction.right(())
+
+  val toEval = 100
+
+  def evalPolicyMany(n: Int)(policy: RetryPolicy): Option[List[FiniteDuration]] =
+    Monad[StateT[Option, policy.S, ?]].replicateM(n, policy.transition).eval(policy.initialState)
+
+  def evalPolicyAll[A](n: Int, policy: RetryPolicy, a: A) =
+    evalPolicyMany(n)(policy) must beSome((fds: List[FiniteDuration]) => fds must contain(beEqualTo(a)).forall)
+
+  def evalPolicyExpected(n: Int, policy: RetryPolicy, expected: List[FiniteDuration]) =
+    evalPolicyMany(n)(policy) must beSome((fds: List[FiniteDuration]) => fds mustEqual expected)
 
   type PolicyFunction[E] = RetryPolicy => DisjunctionT[Name, E, Unit] => (E => Count) => DisjunctionT[Name, E, Unit]
 
@@ -108,91 +115,70 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
       val policy = RetryPolicy.limitRetries(positive)
 
-      val retriedAction = policy.boundError(failingAction)(_ => Count.Infinite)
+      val retriedAction = policy.recover(failingAction)(_ => Count.Infinite)
       retriedAction.run.value mustEqual failingAction.run.value
     }
-
-  def allEqualTo[A](as: List[A], a: A) = as must contain(beEqualTo(a)).forall
 
   /* Tests */
 
   def capDelay =
-    prop { (i: FiniteDuration, j: FiniteDuration, tests: List[PositiveInt]) =>
+    prop { (i: FiniteDuration, j: FiniteDuration) =>
       val lower = i.min(j)
       val higher = i.max(j)
       val policy = RetryPolicy.constantDelay(higher).capDelay(lower)
 
-      allEqualTo(tests.map(test => policy.run(test.int)), Some(lower))
+      evalPolicyAll(toEval, policy, lower)
     }
 
   def limitRetries =
     prop { (pb: PositiveByte) =>
       val i = pb.int
       val policy = RetryPolicy.limitRetries(i)
-      val before = 0.until(i).toList
-      val after = i.to(Byte.MaxValue).toList
 
-      allEqualTo(before.map(b => policy.run(b)), Some(Duration.Zero)) and
-      allEqualTo(after.map(a => policy.run(a)), None)
+      val at = evalPolicyMany(i + 1)(policy)
+
+      evalPolicyAll(i, policy, Duration.Zero) and (at must beNone)
     }
 
   def iterateDelay = {
     val policy = RetryPolicy.iterateDelay(1.second)(_ * 10)
+    val expected = List(1.second, 10.seconds, 100.seconds, 1000.seconds, 10000.seconds)
 
-    (policy.run(0) must beSome(1.seconds)) and
-    (policy.run(1) must beSome(10.seconds)) and
-    (policy.run(2) must beSome(100.seconds)) and
-    (policy.run(3) must beSome(1000.seconds)) and
-    (policy.run(4) must beSome(10000.seconds))
+    evalPolicyExpected(expected.size, policy, expected)
   }
 
-  def constantDelay =
-    prop { (delay: FiniteDuration, tests: List[PositiveInt]) =>
-      val policy = RetryPolicy.constantDelay(delay)
-      allEqualTo(tests.map(test => policy.run(test.int)), Some(delay))
+  def iterateDelayMemoize =
+    prop { (pb: PositiveByte, fd: FiniteDuration) =>
+      val i = pb.int
+      var counter = 0
+      val policy = RetryPolicy.iterateDelay(fd) { fd => counter += 1; fd }
+      val expected = List.fill(i)(fd)
+
+      evalPolicyExpected(expected.size, policy, expected) and (counter mustEqual i)
     }
 
-  def immediate =
-    prop { (tests: List[PositiveInt]) =>
-      val policy = RetryPolicy.immediate
-      allEqualTo(tests.map(test => policy.run(test.int)), Some(Duration.Zero))
+  def constantDelay =
+    prop { (delay: FiniteDuration) =>
+      val policy = RetryPolicy.constantDelay(delay)
+
+      evalPolicyAll(toEval, policy, delay)
     }
+
+  def immediate = evalPolicyAll(toEval, RetryPolicy.immediate, Duration.Zero)
 
   def exponentialBackoff = {
     val policy = RetryPolicy.exponentialBackoff(1.second)
+    val expected = List(1.second, 2.seconds, 4.seconds, 8.seconds, 16.seconds)
 
-    (policy.run(0) must beSome(1.second)) and
-    (policy.run(1) must beSome(2.seconds)) and
-    (policy.run(2) must beSome(4.seconds)) and
-    (policy.run(3) must beSome(8.seconds)) and
-    (policy.run(4) must beSome(16.seconds))
+    evalPolicyExpected(expected.size, policy, expected)
   }
 
   def fibonaciBackoff = {
     val policy = RetryPolicy.fibonacciBackoff(1.second)
+    val expected = List(1.second, 1.second, 2.seconds, 3.seconds, 5.seconds)
 
-    (policy.run(0) must beSome(1.second)) and
-    (policy.run(1) must beSome(1.second)) and
-    (policy.run(2) must beSome(2.seconds)) and
-    (policy.run(3) must beSome(3.seconds)) and
-    (policy.run(4) must beSome(5.seconds))
+    evalPolicyExpected(expected.size, policy, expected)
   }
-
-  /* RetryPolicy#boundError */
-
-  def boundErrorUntilSuccess = untilSuccess(_.boundError)
-
-  def boundErrorErrorSpecificSuccess = errorSpecificSuccess(_.boundError)
-
-  def boundErrorErrorSpecificFailure = errorSpecificFailure(_.boundError)
-
-  def boundErrorObeyLimit =
-    prop { (pb: PositiveByte) =>
-      val retriedAction = RetryPolicy.immediate.boundError(failingAction)(_ => Count.Finite(pb.int))
-      retriedAction.run.value mustEqual failingAction.run.value
-    }
-
-  def boundErrorExhaustPolicy = exhaustPolicy(_.boundError)
 
   /* RetryPolicy#recover */
 
@@ -279,7 +265,7 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
         case Oh => shouldNotBeAction
       }
 
-    retriedAction.run.value mustEqual Disjunction.right(recoverString)
+    retriedAction.run.value mustEqual recoveringAction.run.value
   }
 
   def retryingUntilSuccess =
@@ -303,10 +289,14 @@ class RetryPolicySpec extends Specification with ScalaCheck with RetryPolicySpec
 
 trait RetryPolicySpecInstances extends OrphanInstances {
   implicit val retryPolicyEqual: Equal[RetryPolicy] =
-    Equal.equalBy(_.run(0))
+    Equal.equalBy { rp =>
+      Monad[StateT[Option, rp.S, ?]].replicateM(100, rp.transition).eval(rp.initialState)
+    }
 
   implicit val retryPolicyArbitrary: Arbitrary[RetryPolicy] =
-    Arbitrary(arbitrary[Int => Option[FiniteDuration]].map(RetryPolicy.apply))
+    Arbitrary(arbitrary[(Int, StateT[Option, Int, FiniteDuration])].map {
+      case (initialState, transition) => RetryPolicy.stateT(initialState)(transition)
+    })
 }
 
 trait OrphanInstances {

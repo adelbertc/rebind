@@ -12,9 +12,6 @@ class KleisliOps[F[_], E, A](val action: DisjunctionT[F, E, A]) extends AnyVal {
   private def lift(f: RetryPolicy => DisjunctionT[F, E, A]): Kleisli[DisjunctionT[F, E, ?], RetryPolicy, A] =
     Kleisli[DisjunctionT[F, E, ?], RetryPolicy, A](f)
 
-  def boundError(limits: E => Count)(implicit F: Monad[F]): Kleisli[DisjunctionT[F, E, ?], RetryPolicy, A] =
-    lift(_.boundError(action)(limits))
-
   def recover(limits: E => Count)(implicit E: Equal[E], F: Monad[F]): Kleisli[DisjunctionT[F, E, ?], RetryPolicy, A] =
     lift(_.recover(action)(limits))
 
