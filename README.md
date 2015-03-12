@@ -6,9 +6,6 @@ Rebind is a Scala port/remake of the Haskell [retry](https://hackage.haskell.org
 of the main differences is it is designed to work with `DisjunctionT`'s instead of `MonadIO` things.
 
 ## Getting Started
-**0.1** is intended to be a **preview release** for those who want to play around with Rebind. Despite the
-small bit of code that it is, there may well be breaking changes in the following versions.
-
 Rebind is cross-built/published against Scala 2.10 and 2.11 with
 [Scalaz](https://github.com/scalaz/scalaz) 7.1 - Scalaz is (currently) its only dependency.
 
@@ -17,8 +14,10 @@ To use it in your project, add the following to your SBT build definition:
 ```
 resolvers += "adelbertc" at "http://dl.bintray.com/adelbertc/maven"
 
-libraryDependencies += "com.adelbertc" %% "rebind-core" % "0.1.0"
+libraryDependencies += "com.adelbertc" %% "rebind-core" % "0.2.0"
 ```
+
+Despite the small bit of code that it is, there may well be breaking changes in the following versions.
 
 ### Usage
 Example usage can be found in the
@@ -32,5 +31,5 @@ retry in the case of failure to get a new retrying action back. The operations a
 is - common examples are `Task` and `IO`.
 
 ## License
-Code provided under the BSD-3 license available at http://opensource.org/licenses/BSD-3-Clause, as
+Code is provided under the BSD 3-Clause license available at http://opensource.org/licenses/BSD-3-Clause, as
 well as in the LICENSE file. This is the same license used as the retry library.
