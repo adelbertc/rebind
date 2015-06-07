@@ -25,4 +25,7 @@ sealed abstract class Count {
 object Count {
   final case class Finite(n: Int) extends Count
   final case object Infinite extends Count
+
+  def finite(n: Int): Count = Count.Finite(n)
+  val infinite: Count = Count.Infinite
 }

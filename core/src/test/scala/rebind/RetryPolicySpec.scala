@@ -8,7 +8,7 @@ import org.specs2.time.NoTimeConversions
 
 import scala.concurrent.duration._
 
-import scalaz.{ Disjunction, DisjunctionT, Equal, Monad, Name, StateT }
+import scalaz.{Disjunction, DisjunctionT, Equal, Monad, Name, StateT}
 import scalaz.scalacheck.ScalazProperties.semigroup
 import scalaz.scalacheck.ScalazArbitrary.indexedStateTArb
 import scalaz.std.AllInstances._
@@ -29,27 +29,33 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
       semigroup                       ${semigroup.laws[RetryPolicy]}
 
     recover
+      uses handler                    ${recoverUsesHandler}
       retries until success           ${recoverUntilSuccess}
-      is error-specific (success)     ${recoverErrorSpecificSuccess}
-      is error-specific (failure)     ${recoverErrorSpecificFailure}
-      obeys limits                    ${recoverObeyLimit}
       exhausts policy                 ${recoverExhaustPolicy}
 
-    recoverAll
-      retries until success           ${recoverAllUntilSuccess}
-      exhausts policy                 ${recoverAllExhaustPolicy}
+    recoverWith
+      uses handler                    ${recoverWithUsesHandler}
+      retries until success           ${recoverWithUntilSuccess}
+      exhausts policy                 ${recoverWithExhaustPolicy}
+      retries on unhandled error      ${recoverWithRetriesUnhandled}
 
-    recoverConsecutive
-      retries until success           ${recoverConsecutiveUntilSuccess}
-      is error-specific (success)     ${recoverConsecutiveErrorSpecificSuccess}
-      is error-specific (failure)     ${recoverConsecutiveErrorSpecificFailure}
-      obeys limits                    ${recoverConsecutiveObeyLimit}
-      exhausts policy                 ${recoverConsecutiveExhaustPolicy}
+    retry
+      retries until success           ${retryUntilSuccess}
+      is error-specific (success)     ${retryErrorSpecificSuccess}
+      is error-specific (failure)     ${retryErrorSpecificFailure}
+      obeys limits                    ${retryObeyLimit}
+      exhausts policy                 ${retryExhaustPolicy}
 
-    retrying
-      uses handler                    ${retryingUsesHandler}
-      retries until success           ${retryingUntilSuccess}
-      exhausts policy                 ${retryingExhaustPolicy}
+    retryAll
+      retries until success           ${retryAllUntilSuccess}
+      exhausts policy                 ${retryAllExhaustPolicy}
+
+    retryConsecutive
+      retries until success           ${retryConsecutiveUntilSuccess}
+      is error-specific (success)     ${retryConsecutiveErrorSpecificSuccess}
+      is error-specific (failure)     ${retryConsecutiveErrorSpecificFailure}
+      obeys limits                    ${retryConsecutiveObeyLimit}
+      exhausts policy                 ${retryConsecutiveExhaustPolicy}
     """
 
   val failingAction = DisjunctionT.left[Name, Oops.type, Unit](Name(Oops))
@@ -116,7 +122,7 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
 
       val policy = RetryPolicy.limitRetries(positive)
 
-      val retriedAction = policy.recover(failingAction)(_ => Count.Infinite)
+      val retriedAction = policy.retry(failingAction)(_ => Count.Infinite)
       retriedAction.run.value mustEqual failingAction.run.value
     }
 
@@ -183,75 +189,7 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
 
   /* RetryPolicy#recover */
 
-  def recoverUntilSuccess = untilSuccess(_.recover)
-
-  def recoverErrorSpecificSuccess = errorSpecificSuccess(_.recover)
-
-  def recoverErrorSpecificFailure = errorSpecificFailure(_.recover)
-
-  def recoverObeyLimit =
-    prop { (es: List[UhOh]) =>
-      val limited = es.take(Byte.MaxValue)
-      val numberOfOhs = limited.count(Equal[UhOh].equal(Uh, _)) + 1
-      val stream = limited.toStream ++ Stream(Uh) ++ Stream.continually(Oh)
-
-      val action = new TestAction(stream, ())
-      val retriedAction =
-        RetryPolicy.immediate.recover(action.run()) {
-          case Uh => Count.Finite(numberOfOhs - 1)
-          case Oh => Count.Infinite
-        }
-
-      retriedAction.run.value mustEqual Disjunction.left(Uh)
-    }
-
-  def recoverExhaustPolicy = exhaustPolicy(_.recover)
-
-  /* RetryPolicy#recoverAll */
-
-  def recoverAllUntilSuccess =
-    prop { (pb: PositiveByte) =>
-      val positive = pb.int
-
-      val action = new TestAction(positive, Oops, ())
-      val retriedAction = RetryPolicy.immediate.recoverAll(action.run())
-      retriedAction.run.value mustEqual rightUnit
-    }
-
-  def recoverAllExhaustPolicy = {
-    val function: PolicyFunction[Oops.type] = policy => action => m => policy.recoverAll(action)
-    exhaustPolicy(function)
-  }
-
-  /* RetryPolicy#recoverConsecutive */
-
-  def recoverConsecutiveUntilSuccess = untilSuccess(_.recoverConsecutive)
-
-  def recoverConsecutiveErrorSpecificSuccess = errorSpecificSuccess(_.recoverConsecutive)
-
-  def recoverConsecutiveErrorSpecificFailure = errorSpecificFailure(_.recoverConsecutive)
-
-  def recoverConsecutiveObeyLimit =
-    prop { (pb: PositiveByte) =>
-      val i = pb.int
-      val first = i - 1
-      val last = i
-      val errors: Stream[UhOh] = Stream.fill(first)(Uh) ++ Stream(Oh) ++ Stream.fill(last + 1)(Uh)
-      val action = new TestAction(errors, ())
-      val retriedAction =
-        RetryPolicy.immediate.recoverConsecutive(action.run()) {
-          case Uh => Count.Finite(last)
-          case Oh => Count.Infinite
-        }
-
-      (retriedAction.run.value mustEqual Disjunction.left(Uh)) and (action.run().run.value mustEqual rightUnit)
-    }
-
-  def recoverConsecutiveExhaustPolicy = exhaustPolicy(_.recoverConsecutive)
-
-  /* RetryPolicy#retrying */
-
-  def retryingUsesHandler = {
+  def recoverUsesHandler = {
     val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
 
     val recoverString = "recovered"
@@ -261,7 +199,7 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
     val shouldNotBeAction = DisjunctionT.right[Name, UhOh, String](Name(shouldNotBeString))
 
     val retriedAction =
-      RetryPolicy.immediate.retrying(failWithUhAction) {
+      RetryPolicy.immediate.recover(failWithUhAction) {
         case Uh => recoveringAction
         case Oh => shouldNotBeAction
       }
@@ -269,23 +207,143 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
     retriedAction.run.value mustEqual recoveringAction.run.value
   }
 
-  def retryingUntilSuccess =
+  def recoverUntilSuccess =
     prop { (pb: PositiveByte) =>
       val positive = pb.int
 
       val action = new TestAction(positive, Oops, ())
 
       var counter = 0
-      val retriedAction = RetryPolicy.immediate.retrying(action.run()) { _ => counter += 1; action.run() }
+      val retriedAction = RetryPolicy.immediate.recover(action.run()) { _ => counter += 1; action.run() }
       (retriedAction.run.value mustEqual rightUnit) and (counter mustEqual positive)
     }
 
-  def retryingExhaustPolicy = {
+  def recoverExhaustPolicy = {
     val function: PolicyFunction[Oops.type] = policy => action => m =>
-      policy.retrying(action)(_ => action)
+      policy.recover(action)(_ => action)
 
     exhaustPolicy(function)
   }
+
+  /* RetryPolicy#recoverWith */
+
+  def recoverWithUsesHandler = {
+    val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
+
+    val recoverString = "recovered"
+    val recoveringAction = DisjunctionT.right[Name, UhOh, String](Name(recoverString))
+
+    val shouldNotBeString = "should not happen"
+    val shouldNotBeAction = DisjunctionT.right[Name, UhOh, String](Name(shouldNotBeString))
+
+    val retriedAction =
+      RetryPolicy.immediate.recoverWith(failWithUhAction) {
+        case Uh => recoveringAction
+        case Oh => shouldNotBeAction
+      }
+
+    retriedAction.run.value mustEqual recoveringAction.run.value
+  }
+
+  def recoverWithUntilSuccess =
+    prop { (pb: PositiveByte) =>
+      val positive = pb.int
+
+      val action = new TestAction(positive, Oops, ())
+
+      var counter = 0
+      val retriedAction = RetryPolicy.immediate.recoverWith(action.run()) { case _ => counter += 1; action.run() }
+      (retriedAction.run.value mustEqual rightUnit) and (counter mustEqual positive)
+    }
+
+  def recoverWithExhaustPolicy = {
+    val function: PolicyFunction[Oops.type] = policy => action => m =>
+      policy.recoverWith(action) { case _ => action }
+
+    exhaustPolicy(function)
+  }
+
+  def recoverWithRetriesUnhandled = {
+    val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
+
+    val shouldNotBeString = "should not happen"
+    val shouldNotBeAction = DisjunctionT.right[Name, UhOh, String](Name(shouldNotBeString))
+
+    val retriedAction =
+      RetryPolicy.limitRetries(3).recoverWith(failWithUhAction) {
+        case Oh => shouldNotBeAction
+      }
+
+    retriedAction.run.value mustEqual failWithUhAction.run.value
+  }
+
+  /* RetryPolicy#retry */
+
+  def retryUntilSuccess = untilSuccess(_.retry)
+
+  def retryErrorSpecificSuccess = errorSpecificSuccess(_.retry)
+
+  def retryErrorSpecificFailure = errorSpecificFailure(_.retry)
+
+  def retryObeyLimit =
+    prop { (es: List[UhOh]) =>
+      val limited = es.take(Byte.MaxValue)
+      val numberOfOhs = limited.count(Equal[UhOh].equal(Uh, _)) + 1
+      val stream = limited.toStream ++ Stream(Uh) ++ Stream.continually(Oh)
+
+      val action = new TestAction(stream, ())
+      val retriedAction =
+        RetryPolicy.immediate.retry(action.run()) {
+          case Uh => Count.Finite(numberOfOhs - 1)
+          case Oh => Count.Infinite
+        }
+
+      retriedAction.run.value mustEqual Disjunction.left(Uh)
+    }
+
+  def retryExhaustPolicy = exhaustPolicy(_.retry)
+
+  /* RetryPolicy#retryAll */
+
+  def retryAllUntilSuccess =
+    prop { (pb: PositiveByte) =>
+      val positive = pb.int
+
+      val action = new TestAction(positive, Oops, ())
+      val retriedAction = RetryPolicy.immediate.retryAll(action.run())
+      retriedAction.run.value mustEqual rightUnit
+    }
+
+  def retryAllExhaustPolicy = {
+    val function: PolicyFunction[Oops.type] = policy => action => m => policy.retryAll(action)
+    exhaustPolicy(function)
+  }
+
+  /* RetryPolicy#retryConsecutive */
+
+  def retryConsecutiveUntilSuccess = untilSuccess(_.retryConsecutive)
+
+  def retryConsecutiveErrorSpecificSuccess = errorSpecificSuccess(_.retryConsecutive)
+
+  def retryConsecutiveErrorSpecificFailure = errorSpecificFailure(_.retryConsecutive)
+
+  def retryConsecutiveObeyLimit =
+    prop { (pb: PositiveByte) =>
+      val i = pb.int
+      val first = i - 1
+      val last = i
+      val errors: Stream[UhOh] = Stream.fill(first)(Uh) ++ Stream(Oh) ++ Stream.fill(last + 1)(Uh)
+      val action = new TestAction(errors, ())
+      val retriedAction =
+        RetryPolicy.immediate.retryConsecutive(action.run()) {
+          case Uh => Count.Finite(last)
+          case Oh => Count.Infinite
+        }
+
+      (retriedAction.run.value mustEqual Disjunction.left(Uh)) and (action.run().run.value mustEqual rightUnit)
+    }
+
+  def retryConsecutiveExhaustPolicy = exhaustPolicy(_.retryConsecutive)
 }
 
 trait RetryPolicySpecInstances extends OrphanInstances {

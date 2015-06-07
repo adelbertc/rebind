@@ -1,6 +1,6 @@
 package rebind
 
-import scalaz.{ Disjunction, DisjunctionT, Name }
+import scalaz.{Disjunction, DisjunctionT, Name}
 
 final class TestAction[E, A](private var errorStream: Stream[E], private val success: A) {
   def this(n: Int, error: E, success: A) = this(Stream.fill(n)(error), success)
