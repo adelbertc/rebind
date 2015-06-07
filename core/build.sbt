@@ -7,12 +7,12 @@ resolvers ++= Seq(
   "scalaz-bintray"  at "http://dl.bintray.com/scalaz/releases"
 )
 
-val scalazVersion = "7.1.1"
+val scalazVersion = "7.1.2"
 
-val specs2Version = "2.4.17"
+val specs2Version = "3.6.1"
 
 libraryDependencies ++= Seq(
-  compilerPlugin("org.spire-math" %% "kind-projector" % "0.5.2"),
+  compilerPlugin("org.spire-math" %% "kind-projector" % "0.5.4"),
 
   "org.scalaz"      %% "scalaz-core"                % scalazVersion,
   "org.scalacheck"  %% "scalacheck"                 % "1.12.2"          % "test",

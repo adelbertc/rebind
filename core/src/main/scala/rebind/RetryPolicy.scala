@@ -241,8 +241,13 @@ trait RetryPolicyFunctions {
 
   /** Constantly retry, pausing for pivot +/- epsilon. */
   def random(pivot: FiniteDuration, epsilon: FiniteDuration): RetryPolicy = {
+    def longMod(a: Long, n: Long): Long =
+      a - (n * (a / n))
+
     def random(): FiniteDuration = {
-      val randomDuration = (Random.nextLong() % epsilon.toNanos).nanoseconds
+      val randomLong = math.abs(Random.nextLong())
+      val newEpsilon = longMod(randomLong, epsilon.toNanos)
+      val randomDuration = newEpsilon.nanoseconds
       if (Random.nextBoolean()) pivot + randomDuration else pivot - randomDuration
     }
 
