@@ -1,6 +1,7 @@
 package rebind
 
 import scala.concurrent.duration._
+import scala.util.Random
 
 import scalaz.{Apply, Disjunction, DisjunctionT, DLeft, DRight, Equal, Foldable, IList, Monad, Semigroup, StateT, Zipper}
 import scalaz.std.option._
@@ -237,4 +238,14 @@ trait RetryPolicyFunctions {
   /** Immediately retry the specified number of times */
   def limitRetries(i: Int): RetryPolicy =
     RetryPolicy(0)(n => if (n < i) Option((n + 1, Duration.Zero)) else None)
+
+  /** Constantly retry, pausing for pivot +/- epsilon. */
+  def random(pivot: FiniteDuration, epsilon: FiniteDuration): RetryPolicy = {
+    def random(): FiniteDuration = {
+      val randomDuration = (Random.nextLong() % epsilon.toNanos).nanoseconds
+      if (Random.nextBoolean()) pivot + randomDuration else pivot - randomDuration
+    }
+
+    iterateDelay(random())(_ => random())
+  }
 }
