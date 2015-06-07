@@ -34,9 +34,6 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
       exhausts policy                 ${recoverExhaustPolicy}
 
     recoverWith
-      uses handler                    ${recoverWithUsesHandler}
-      retries until success           ${recoverWithUntilSuccess}
-      exhausts policy                 ${recoverWithExhaustPolicy}
       retries on unhandled error      ${recoverWithRetriesUnhandled}
 
     retry
@@ -56,6 +53,12 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
       is error-specific (failure)     ${retryConsecutiveErrorSpecificFailure}
       obeys limits                    ${retryConsecutiveObeyLimit}
       exhausts policy                 ${retryConsecutiveExhaustPolicy}
+
+    retryConsecutiveWith
+      doesn't retry unhandled error   ${retryConsecutiveWithUnhandled}
+
+    retryWith
+      doesn't retry unhandled error   ${retryWithUnhandled}
     """
 
   val failingAction = DisjunctionT.left[Name, Oops.type, Unit](Name(Oops))
@@ -227,42 +230,6 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
 
   /* RetryPolicy#recoverWith */
 
-  def recoverWithUsesHandler = {
-    val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
-
-    val recoverString = "recovered"
-    val recoveringAction = DisjunctionT.right[Name, UhOh, String](Name(recoverString))
-
-    val shouldNotBeString = "should not happen"
-    val shouldNotBeAction = DisjunctionT.right[Name, UhOh, String](Name(shouldNotBeString))
-
-    val retriedAction =
-      RetryPolicy.immediate.recoverWith(failWithUhAction) {
-        case Uh => recoveringAction
-        case Oh => shouldNotBeAction
-      }
-
-    retriedAction.run.value mustEqual recoveringAction.run.value
-  }
-
-  def recoverWithUntilSuccess =
-    prop { (pb: PositiveByte) =>
-      val positive = pb.int
-
-      val action = new TestAction(positive, Oops, ())
-
-      var counter = 0
-      val retriedAction = RetryPolicy.immediate.recoverWith(action.run()) { case _ => counter += 1; action.run() }
-      (retriedAction.run.value mustEqual rightUnit) and (counter mustEqual positive)
-    }
-
-  def recoverWithExhaustPolicy = {
-    val function: PolicyFunction[Oops.type] = policy => action => m =>
-      policy.recoverWith(action) { case _ => action }
-
-    exhaustPolicy(function)
-  }
-
   def recoverWithRetriesUnhandled = {
     val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
 
@@ -344,6 +311,32 @@ class RetryPolicySpec extends Specification with NoTimeConversions with ScalaChe
     }
 
   def retryConsecutiveExhaustPolicy = exhaustPolicy(_.retryConsecutive)
+
+  /* RetryPolicy#retryConsecutiveWith */
+
+  def retryConsecutiveWithUnhandled = {
+    val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
+
+    val retriedAction =
+      RetryPolicy.limitRetries(3).retryConsecutiveWith(failWithUhAction) {
+        case Oh => Count.Infinite
+      }
+
+    retriedAction.run.value mustEqual failWithUhAction.run.value
+  }
+
+  /* RetryPolicy#retryWith */
+
+  def retryWithUnhandled = {
+    val failWithUhAction = DisjunctionT.left[Name, UhOh, String](Name(Uh))
+
+    val retriedAction =
+      RetryPolicy.limitRetries(3).retryWith(failWithUhAction) {
+        case Oh => Count.Infinite
+      }
+
+    retriedAction.run.value mustEqual failWithUhAction.run.value
+  }
 }
 
 trait RetryPolicySpecInstances extends OrphanInstances {
